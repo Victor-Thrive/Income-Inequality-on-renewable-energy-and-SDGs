@@ -18,7 +18,7 @@ data_m <- map(csv_files, read_csv)
 # Assign names to the list based on file names (without extensions)
 names(data_m) <- tools::file_path_sans_ext(basename(csv_files))
 
-data <- data_m[-c(15,12,7,6)]
+data <- data_m[-c(15,12,5,6)]
 
 # -------------------------------
 # 3. Data Cleaning Functions
@@ -48,7 +48,7 @@ clean_data <- function(df, value_col) {
 }
 
 # -------------------------------
-# 4. Clean and Prepare Data Using map()
+# 4. Clean and Prepare Data Using map2()
 # -------------------------------
 cleaned_data <- map2(data, 
                      c("CO2_Emission", 
@@ -62,3 +62,49 @@ cleaned_data <- map2(data,
                        "lft",
                        "trade",
                        "urban"), clean_data)
+
+# -------------------------------
+# Load Financial Development Data
+# -------------------------------
+
+# Financial Development Data for 2021
+financial_2021 <- 
+  data_m$`financial-development-Aug-2022` %>%
+  filter(!is.na(country)) %>%
+  mutate(across(where(is.character), as_factor)) %>%
+  select(country:year)
+
+# Financial Development Data for 2022
+financial_2022 <- 
+  data_m$`financial-development-Nov-2021` %>%
+  filter(!is.na(country)) %>%
+  mutate(across(where(is.character), as_factor)) %>%
+  select(country:year)
+
+# -------------------------------
+# Load and Clean WGI Data
+# -------------------------------
+
+wgi <- data_m$wgi %>%
+  mutate(
+    year = factor(year),
+    estimate = suppressWarnings(as.numeric(str_replace_all(estimate, "[^0-9.-]", ""))),
+    stddev = suppressWarnings(as.numeric(str_replace_all(stddev, "[^0-9.-]", ""))),
+    nsource = suppressWarnings(as.numeric(str_replace_all(nsource, "[^0-9.-]", ""))),
+    pctrank = suppressWarnings(as.numeric(str_replace_all(pctrank, "[^0-9.-]", ""))),
+    pctranklower = suppressWarnings(as.numeric(str_replace_all(pctranklower, "[^0-9.-]", ""))),
+    pctrankupper = suppressWarnings(as.numeric(str_replace_all(pctrankupper, "[^0-9.-]", "")))
+  ) %>%
+  filter(!is.na(estimate)) %>%
+  mutate(across(where(is.character), as_factor)) %>%
+  select(country = countryname, year:pctrankupper)
+
+# ---------------------------------
+# swiid
+# ---------------------------------
+
+swiid <- 
+  data_m$swiid_source %>%
+  filter(!is.na(monetary)) %>%
+  mutate(across(where(is.character), as_factor)) %>%
+  select(-c(gini_se,series:link))
