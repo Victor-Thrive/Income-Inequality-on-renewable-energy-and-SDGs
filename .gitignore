@@ -1,4 +1,84 @@
-.Rproj.user
+# ==========================
+# Posit Cloud / R Projects
+# ==========================
+
+# R history and session files
 .Rhistory
 .RData
 .Ruserdata
+.Rproj.user/
+
+# RStudio project files (if multiple users, better ignore)
+*.Rproj
+
+# Output from knitr / Quarto
+*.utf8.md
+*.knit.md
+*.nb.html
+*.pdf
+*.docx
+*.pptx
+*.html
+_site/
+
+# ==========================
+# Python / Virtual Environments
+# ==========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# ==========================
+# Data
+# ==========================
+# Ignore raw/sensitive data
+raw data/
+meta data/
+clean data/
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.sav
+*.dta
+*.rds
+
+# Keep processed/tidy datasets
+#!data/processed/
+#!data/processed/*.csv
+
+# ==========================
+# Logs / Cache / Temp
+# ==========================
+*.log
+*.tmp
+*.out
+*.bak
+*.aux
+*.toc
+*.gz
+*.zip
+.DS_Store
+Thumbs.db
+
+# ==========================
+# Custom Project Rules
+# ==========================
+
+# Ignore reports (but keep ReadMe for structure)
+reports/*
+!reports/README.md
+
+# Ignore results folder but keep summary
+results/*
+!results/README.md
+
+# Config & Secrets
+config/*.yml
+config/*.json
+secrets/
