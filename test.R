@@ -268,7 +268,7 @@ ggplot(world_map) +
 # 7) Correlation matrix (full correlation excluding country & year)
 # -------------------------
 cor_data <- income_inequality %>%
-  select(all_of(c(Y_var, X_vars))) %>%
+  dplyr::select(all_of(c(Y_var, X_vars))) %>%
   drop_na()
 
 cor_matrix <- cor(cor_data, use = "pairwise.complete.obs")
@@ -279,6 +279,52 @@ corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8)
 cor_by_group <- income_inequality %>%
   group_by(income_group) %>%
   summarise(across(all_of(c(Y_var, X_vars)), ~ list(cor(., income_inequality[[Y_var]], use = "pairwise.complete.obs"))))
+
+
+
+cor_pairs_by_group <- income_inequality %>%
+  group_by(income_group) %>%
+  summarise(
+    across(
+      all_of(X_vars),
+      ~ cor(.x, REC, use = "pairwise.complete.obs"),
+      .names = "cor_REC_{col}"
+    ),
+    .groups = "drop"
+  )
+
+cor_pairs_by_group
+# Assuming your tibble is called cor_pairs_by_group
+# Pivot longer to make it ggplot-friendly
+cor_long <- cor_pairs_by_group %>%
+  pivot_longer(
+    cols = starts_with("cor_REC_"),
+    names_to = "variable",
+    names_prefix = "cor_REC_",
+    values_to = "correlation"
+  )
+
+# Heatmap
+ggplot(cor_long, aes(x = variable, y = income_group, fill = correlation)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits = c(-1,1)) +
+  geom_text(aes(label = round(correlation, 2)), color = "black", size = 3) +
+  labs(
+    title = "Correlation of REC with Predictors by Income Group",
+    x = "Predictor",
+    y = "Income Group",
+    fill = "Correlation"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 11, color = "gray40", hjust = 0.5)
+  )
+
+
+
+
 # (the above summary gives correlations of each var with REC by group; you can expand similarly)
 
 # -------------------------

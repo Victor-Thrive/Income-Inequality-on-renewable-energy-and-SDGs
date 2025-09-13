@@ -7,14 +7,12 @@
 # -----------------------
 library(tidyverse)       # Data wrangling & visualization
 library(plm)             # Panel data estimation
-library(psych)           # Descriptive statisticss
-library(ggplot2)         # Visualization
+library(psych)           # Descriptive statisticss      
 library(tmap)            # Thematic maps
 library(sf)              # Spatial data
 library(corrplot)        # Correlation matrix
 library(urca)            # Unit root tests
 library(tseries)         # Time series tests
-library(panelAR)         # Panel AR models
 library(pgmm)            # GMM estimators
 library(quantreg)        # Quantile regression
 library(lmtest)          # Diagnostics
@@ -23,24 +21,20 @@ library(vars)            # Lag order selection
 library(gt)
 library(rnaturalearth)
 library(rnaturalearth)
+library(moments)
 # Map GINI
-library(tmap)
-library(ggplot2)
-library(sf)
 library(ggspatial)
-
+source("functions.R")
 
 # -----------------------
 # 2. Load and Inspect Dataset
 # -----------------------
 income_inequality <- read_csv("clean data/income_inequality_data_01.csv")  # Replace with your dataset
-glimpse(income_inequality)
+#glimpse(income_inequality)
 
-income_inequality <- income_inequality |>
-  mutate(across(where(is.character), as.factor)) |>
+income_inequality <- income_inequality %>%
+  mutate(across(where(is.character), as.factor))  %>%
   rename(
-    country = country,
-    year = year,
     REC = renew_energy_cons,
     GINI = gini_disp,
     GDP = gdp_per_capita,
@@ -52,8 +46,8 @@ income_inequality <- income_inequality |>
     ENERGY_INTENSITY = energy_intensity,
     REG_QUALITY = reg_quality,
     income_group = income_level_stable
-  ) |>
-  select(-c(was_missing,years_available,avg_gdp,income_level))
+  )  %>%
+  dplyr::select(-was_missing, -years_available, -avg_gdp, -income_level)
 
 # quick checks
 summary(income_inequality)
@@ -96,9 +90,71 @@ pdim(pdata)
 # -------------------------
 # 5) Descriptive statistics (overall and by income_group)
 # -------------------------
+# make sure we are working with a data frame
+numeric_data <- as.data.frame(pdata[, c(Y_var, X_vars)]) %>%
+  dplyr::select(where(is.numeric))
+
 # overall descriptive (psych::describe)
-desc_overall <- describe(pdata[, c(Y_var, X_vars)], na.rm = TRUE)
-print(desc_overall)
+desc_overall <- describe(numeric_data, na.rm = TRUE)
+
+# --- Add JB stats ---
+jb_stats <- numeric_data %>%
+  summarise(across(
+    everything(),
+    list(
+      JB   = ~suppressWarnings(jarque.bera.test(na.omit(.x))$statistic),
+      JB_p = ~suppressWarnings(jarque.bera.test(na.omit(.x))$p.value)
+    )
+  ))
+
+# reshape JB stats
+jb_tidy <- as.data.frame(t(jb_stats))
+colnames(jb_tidy) <- "value"
+jb_tidy$var <- sub("_(JB|JB_p)$", "", rownames(jb_tidy))
+jb_tidy$stat <- sub(".*_(JB|JB_p)$", "\\1", rownames(jb_tidy))
+jb_wide <- tidyr::pivot_wider(jb_tidy, names_from = stat, values_from = value)
+
+# combine describe with JB
+desc_overall_clean <- desc_overall %>%
+  dplyr::select(Mean = mean,
+                Median = median,
+                Min = min,
+                Max = max,
+                SD =sd,
+                Skewness = skew,
+                Kurtosis = kurtosis) %>%                # drop vars and n
+  tibble::rownames_to_column("Variable") %>%
+  left_join(jb_wide, by = c("Variable" = "var"))
+
+# print nicely
+descriptive_stat <-
+  desc_overall_clean %>%
+  gt() %>%
+  tab_header(
+    title = md("**Descriptive Statistics**"),   # bold title
+    subtitle = NULL
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    decimals = 3
+  ) %>%
+  tab_style(
+    style = list(
+      cell_text(weight = "bold", color = "white")  # bold + white text
+    ),
+    locations = cells_column_labels(everything()) # column headers
+  ) %>%
+  tab_options(
+    table.font.size = "smaller",
+    data_row.padding = px(2),
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    heading.background.color = "#2C3E50",    # dark blue
+    column_labels.background.color = "#34495E" # lighter blue
+  ) %>%
+  tab_source_note(
+    source_note = md("**Note.** Table reports descriptive statistics for all study variables. Values represent overall mean, median, dispersion, and distributional characteristics across countries and years.")
+  )
 
 # Descriptive stats by income group
 desc_by_group <- income_inequality %>%
@@ -108,36 +164,48 @@ desc_by_group <- income_inequality %>%
     sample_size = n(),
     across(
       all_of(c(Y_var, X_vars)), 
-      list(mean = ~mean(.x, na.rm = TRUE),
-           sd = ~sd(.x, na.rm = TRUE),
-           min = ~min(.x, na.rm = TRUE),
-           max = ~max(.x, na.rm = TRUE)),
-      .names = "{col}_{fn}")) %>%
+      list(
+        mean   = ~mean(.x, na.rm = TRUE),
+        median = ~median(.x, na.rm = TRUE),
+        min    = ~min(.x, na.rm = TRUE),
+        max    = ~max(.x, na.rm = TRUE),
+        sd     = ~sd(.x, na.rm = TRUE),
+        skew   = ~skewness(.x, na.rm = TRUE),
+        kurt   = ~kurtosis(.x, na.rm = TRUE),
+        JB     = ~suppressWarnings(jarque.bera.test(na.omit(.x))$statistic),
+        JB_p   = ~suppressWarnings(jarque.bera.test(na.omit(.x))$p.value)
+      ),
+      .names = "{col}_{fn}"
+    )
+  ) %>%
   arrange(income_group)
 
 # show nicely
 # Convert to gt table
-desc_table <- desc_by_group %>%
+desc_table <- # ---- Convert to GT table ----
+desc_by_group %>%
   gt() %>%
   tab_header(
-    title = "Descriptive Statistics by Income Group",
-    subtitle = "Mean, Standard Deviation, and Sample Size"
+    title = md("**Descriptive Statistics by Income Group**")
   ) %>%
   fmt_number(
     columns = where(is.numeric),
-    decimals = 2
+    decimals = 3
   ) %>%
   tab_style(
-    style = cell_text(weight = "bold"),
+    style = list(cell_text(weight = "bold", color = "white")),
     locations = cells_column_labels(everything())
   ) %>%
   tab_options(
-    table.font.size = 12,
-    table.border.top.style = "solid",
-    table.border.bottom.style = "solid"
+    table.font.size = "small",
+    data_row.padding = px(2),
+    heading.background.color = "#2C3E50",    # dark header
+    column_labels.background.color = "#34495E"
+  ) %>%
+  tab_source_note(
+    source_note = md("**Note.** Table reports descriptive statistics (mean, median, spread, distributional shape, and normality tests) by World Bank income groups.")
   )
 
-desc_table
 
 # ----------------------------
 # 2. Create tables by category
@@ -172,7 +240,7 @@ income_inequality %>%
 ggplot(income_inequality, aes(x = factor(year), y = REC)) +
   geom_boxplot() +
   theme_minimal() +
-  labs(x = "Year", y = "Renewable energy consumption (REC)", title = "REC distribution across years") +
+  labs(x = "", y = "", title = "Renewable energy concumption across years") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
 
 # 6.3 Trend: Renewable Energy vs Income Inequality (scatter + smoothing)
@@ -186,8 +254,6 @@ ggplot(income_inequality, aes(x = GINI, y = REC)) +
 # Thematic Map: GINI (requires spatial shapefile merged with data)
 # 6.4 Maps (income inequality & REC) - using rnaturalearth for country shapes
 # Note: mapping requires matching country naming conventions. You may need to harmonize country names.
-library(rnaturalearth)
-library(rnaturalearthdata)
 world <- ne_countries(scale = "medium", returnclass = "sf")
 
 # prepare data for joining - average by country across years
@@ -201,20 +267,13 @@ map_data <- income_inequality %>%
 # join (this will match only where names align)
 world_map <- left_join(world, map_data, by = c("name" = "country"))
 
-
-
-tm_shape(world_map) +
-  tm_polygons("GINI_mean", palette = "RdYlBu", title = "Mean GINI") +
-  tm_layout(title = "Mean Income Inequality (GINI) by Country")
-
-
 # Make sure world_map is an sf object with GINI_mean column
 ggplot(world_map) +
   geom_sf(aes(fill = GINI_mean), color = "gray60", size = 0.2) +
   scale_fill_distiller(palette = "RdYlBu", direction = 1, name = "Mean GINI") +
   labs(
     title = "Mean Income Inequality (GINI) by Country",
-    subtitle = "Average values (1990–2022)",
+    subtitle = "Average values (1996–2022)",
     caption = "Source: SWIID | Author's computation, 2025"
   ) +
   theme_minimal() +
@@ -225,18 +284,13 @@ ggplot(world_map) +
     legend.position = "right"
   )
 
-# Map REC
-tm_shape(world_map) +
-  tm_polygons("REC_mean", palette = "Greens", title = "Mean REC (%)") +
-  tm_layout(title = "Mean Renewable Energy Consumption by Country")
-
 # Make sure world_map is an sf object with REC_mean column
 ggplot(world_map) +
   geom_sf(aes(fill = REC_mean), color = "gray60", size = 0.2) +
   scale_fill_distiller(palette = "Greens", direction = 1, name = "Mean REC (%)") +
   labs(
     title = "Mean Renewable Energy Consumption by Country",
-    subtitle = "Average values (1990–2022)",
+    subtitle = "Average values (1996–2022)",
     caption = "Source: World Bank (WDI) | Author's computation, 2025"
   ) +
   theme_minimal() +
@@ -247,13 +301,165 @@ ggplot(world_map) +
     legend.position = "right"
   )
 
+library(ggrepel)
+
+# Get last available year for each income_group
+label_data <- gini_summary %>%
+  group_by(income_group) %>%
+  filter(year == max(year, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(gini_summary, aes(x = year, y = mean_gini, color = income_group, fill = income_group)) +
+  geom_line(size = 0.8) +
+  geom_ribbon(aes(ymin = mean_gini - se_gini, ymax = mean_gini + se_gini),
+              alpha = 0.25, color = NA) +
+  geom_text_repel(
+    data = label_data,
+    aes(label = income_group),
+    nudge_x = 2,
+    hjust = 0,
+    show.legend = FALSE,
+    size = 4,
+    fontface = "bold"
+  ) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Income Inequality Trends by Income Group",
+    subtitle = "SWIID Gini Index (Disposable Income)",
+    x = "Year",
+    y = "Gini Index",
+    caption = "Source: SWIID"
+  ) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 13, color = "grey30"),
+    axis.title = element_text(face = "bold")
+  ) +
+  scale_color_manual(values = line_colors) +
+  scale_fill_manual(values = fill_colors) +
+  scale_x_continuous(
+    breaks = seq(min(gini_summary$year, na.rm = TRUE),
+                 max(gini_summary$year, na.rm = TRUE) + 5,
+                 by = 5),                  # 5-year intervals
+    limits = c(min(gini_summary$year, na.rm = TRUE),
+               max(gini_summary$year, na.rm = TRUE) + 5)  # extend x-axis
+  )
 
 
 # -----------------------
 # 7. Correlation Matrix
 # -----------------------
-cor_mat <- cor(income_inequality[, c(dependent_var, independent_vars)], use = "pairwise.complete.obs")
-corrplot(cor_mat, method = "circle", tl.cex = 0.7)
+library(corrplot)
+library(Hmisc)
+
+# --- 1. Compute correlations and p-values ---
+cor_data <- income_inequality %>%
+  dplyr::select(all_of(c(Y_var, X_vars))) %>%
+  drop_na()
+
+rc <- Hmisc::rcorr(as.matrix(cor_data))
+R <- rc$r    # correlation matrix
+P <- rc$P    # p-value matrix
+
+# --- 2. Convert to long format ---
+vars <- colnames(R)
+m <- as.data.frame(as.table(R))
+names(m) <- c("Var1", "Var2", "corr")
+p_df <- as.data.frame(as.table(P))
+names(p_df) <- c("Var1", "Var2", "pval")
+
+df <- left_join(m, p_df, by = c("Var1", "Var2"))
+
+# Keep only lower triangle
+df <- df %>%
+  mutate(i = match(Var1, vars),
+         j = match(Var2, vars)) %>%
+  filter(i >= j)
+
+# Factor ordering so first var is at the top
+df$Var1 <- factor(df$Var1, levels = rev(vars))
+df$Var2 <- factor(df$Var2, levels = vars)
+
+# --- 3. Adaptive text color ---
+df <- df %>%
+  mutate(text_col = ifelse(abs(corr) > 0.5, "white", "black"),
+         label = sprintf("%.2f", corr))
+
+# --- 4. Plot ---
+ggplot(df, aes(x = Var2, y = Var1, fill = corr)) +
+  geom_tile(color = "grey90", width = 0.95, height = 0.95) +
+  geom_text(aes(label = label, color = text_col), size = 4, fontface = "bold") +
+  scale_color_identity() +
+  scale_fill_gradient2(
+    low = "#b2182b", mid = "white", high = "#2166ac",
+    midpoint = 0, limits = c(-1, 1), space = "Lab"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_fixed() +
+  guides(fill = guide_colorbar(title = "Correlation", barwidth = 10, barheight = 0.6))
+
+# --- 1. Compute correlations and p-values ---
+cor_data <- income_inequality %>%
+  dplyr::select(all_of(c(Y_var, X_vars))) %>%
+  drop_na()
+
+rc <- Hmisc::rcorr(as.matrix(cor_data))
+R <- rc$r    # correlation matrix
+P <- rc$P    # p-value matrix
+
+# --- 2. Format correlation with p-values ---
+corr_labels <- matrix(
+  paste0(sprintf("%.2f", R), " (", signif(P, 2), ")"),
+  nrow = nrow(R),
+  dimnames = dimnames(R)
+)
+
+# --- 3. Keep only lower triangle (including diagonal) ---
+corr_labels[upper.tri(corr_labels)] <- ""
+
+# --- 4. Convert to data frame ---
+cor_df <- as.data.frame(corr_labels) %>%
+  rownames_to_column("Variable")
+
+# --- 5. GT table ---
+cor_gt <- cor_df %>%
+  gt() %>%
+  tab_header(
+    title = "Correlation Matrix (Lower Triangle)",
+    subtitle = "Pearson correlations with p-values in parentheses"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) %>%
+  opt_table_font(
+    font = list(google_font("Lato"), default_fonts())
+  ) %>%
+  tab_options(
+    table.font.size = "small",
+    data_row.padding = px(2)
+  ) %>%
+  tab_options(
+    table.font.size = "small",
+    data_row.padding = px(2),
+    heading.background.color = "#2C3E50",    # dark header
+    column_labels.background.color = "#34495E"
+  ) %>%
+  tab_source_note(
+    source_note = md("**Note.** Table reports correlations.")
+  )
+
+
+# --- Output ---
+cor_gt
+
+
 
 # -----------------------
 # 8. Panel Unit Root Tests
@@ -293,11 +499,8 @@ VARselect(data[, c(dependent_var, independent_vars)], lag.max = 5, type = "const
 # -----------------------
 # 10. ARDL Model 
 # -----------------------
-
-
 # PMG Test 4 panel data
 # MG Test
-
 # -----------------------
 # 11. PMG and MG Estimation
 # -----------------------

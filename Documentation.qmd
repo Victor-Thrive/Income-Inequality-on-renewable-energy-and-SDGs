@@ -1,0 +1,26 @@
+---
+title: "Income Inequality on Renewable Energy and SDGs"
+format: html
+editor: visual
+---
+
+## Variable Overview
+
+This study examines economic (GDP, FDI, Trade, Labour), social (GINI, Urbanization), environmental (Renewable Energy Consumption, Carbon Emissions, Energy Intensity), and institutional (Regulatory Quality) variables to capture the multidimensional drivers of development. Together, these indicators provide a comprehensive framework for assessing the interactions between growth, inequality, sustainability, and governance.
+
+| Category | Short form | Full form | Measurement | Source |
+|----|----|----|----|----|
+| Economic | GDP | Gross Domestic Product | GDP per capita (constant 2015 US\$) | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Economic | FDI | Foreign Direct Investment | Net inflows (% of GDP) | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Economic | TRADE | Trade (% of GDP) | Imports + Exports (% of GDP) | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Economic | LABOUR | Labour Force Total | Total labour force (millions) | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Social | GINI | Income Inequality (Gini Index) | The Gini coefficient (0 = equality, 1 = inequality) | [GINI](https://fsolt.org/swiid/) |
+| Social | URBAN | Urban Population (% of total) | Urban population as % of total population | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Environmental | REC | Renewable Energy Consumption | Renewables per capita (kWh equivalent) | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Environmental | CARBON | Carbon Dioxide Emissions | CO₂ emissions per capita (metric tons) | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Environmental | ENERGY INTENSITY | Energy Intensity (MJ per US\$2015 GDP) | Energy consumption per unit of GDP | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+| Institutional | REG QUALITY | Regulatory Quality | erceptions of government’s ability to formulate & implement sound policies | \[[WDI](https://databank.worldbank.org/source/world-development-indicators?utm_source=chatgpt.com)\] |
+
+: [^1]
+
+[^1]: Note: Variables are grouped into four dimensions: Economic (GDP, FDI, Trade, Labour), Social (GINI, Urbanization), Environmental (Renewable Energy Consumption, Carbon Emissions, Energy Intensity), and Institutional (Regulatory Quality), reflecting growth, inequality, sustainability, and governance factors.
