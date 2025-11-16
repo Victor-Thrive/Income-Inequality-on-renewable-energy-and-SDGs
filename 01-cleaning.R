@@ -20,7 +20,7 @@ data_m <- map(csv_files, read_csv)
 # Assign names to the list based on file names (without extensions)
 names(data_m) <- tools::file_path_sans_ext(basename(csv_files))
 
-data <- data_m[-c(1,8,15,12,5,6)]
+data <- data_m[-c(1,8,15,12,13,5,6)]
 data_1 <- data_m[c(1,8)]
 
 # 3. 

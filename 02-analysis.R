@@ -302,7 +302,7 @@ ggplot(world_map) +
   )
 
 library(ggrepel)
-
+#-------------------------------------
 # Get last available year for each income_group
 label_data <- gini_summary %>%
   group_by(income_group) %>%
@@ -353,10 +353,42 @@ ggplot(gini_summary, aes(x = year, y = mean_gini, color = income_group, fill = i
 library(corrplot)
 library(Hmisc)
 
-# --- 1. Compute correlations and p-values ---
-cor_data <- income_inequality %>%
-  dplyr::select(all_of(c(Y_var, X_vars))) %>%
-  drop_na()
+sapply(income_inequality[, vars_to_log], function(x) sum(x <= 0))
+
+vars_to_log_safe   <- c("CARBON", "GDP")     # no zeros or negatives
+vars_to_log_shift  <- c("REC", "FDI")        # contain zeros/negatives
+
+model_data <- income_inequality %>%
+  # KEEP country and year for panel structure
+  dplyr::select(country, year, everything(), -income_group) %>%
+  
+  # Log transform safe variables
+  mutate(across(
+    all_of(vars_to_log_safe),
+    ~ log(.),
+    .names = "log_{col}"
+  )) %>%
+  
+  # Log transform shifted variables
+  mutate(across(
+    all_of(vars_to_log_shift),
+    ~ log(. - min(., na.rm = TRUE) + 1),
+    .names = "log_{col}"
+  )) %>%
+  
+  # Remove originals if needed
+  dplyr::select(-all_of(c(vars_to_log_safe, vars_to_log_shift, "LABOUR", "URBAN"))) %>%
+  rename(
+    REC = log_REC,
+    CARBON = log_CARBON,
+    GDP = log_GDP,
+    FDI = log_FDI
+  )
+
+
+cor_data <- model_data
+
+names(cor_data)
 
 rc <- Hmisc::rcorr(as.matrix(cor_data))
 R <- rc$r    # correlation matrix
@@ -382,12 +414,12 @@ df$Var1 <- factor(df$Var1, levels = rev(vars))
 df$Var2 <- factor(df$Var2, levels = vars)
 
 # --- 3. Adaptive text color ---
-df <- df %>%
+df_cor <- df %>%
   mutate(text_col = ifelse(abs(corr) > 0.5, "white", "black"),
          label = sprintf("%.2f", corr))
 
 # --- 4. Plot ---
-ggplot(df, aes(x = Var2, y = Var1, fill = corr)) +
+ggplot(df_cor, aes(x = Var2, y = Var1, fill = corr)) +
   geom_tile(color = "grey90", width = 0.95, height = 0.95) +
   geom_text(aes(label = label, color = text_col), size = 4, fontface = "bold") +
   scale_color_identity() +
@@ -459,6 +491,80 @@ cor_gt <- cor_df %>%
 # --- Output ---
 cor_gt
 
+#VIF
+
+num_data <- model_data %>% 
+  dplyr::select(where(is.numeric))
+
+library(car)
+
+model <- lm(REC ~ ., data = num_data)
+
+vif_results <- vif(model)
+vif_df <- data.frame(
+  Variable = names(vif_results),
+  VIF = as.numeric(vif_results)
+)
+
+pairs(~ URBAN + LABOUR + GDP + CARBON + TRADE, data = num_data)
+cor(num_data[, c("URBAN", "LABOUR", "GDP", "CARBON", "TRADE")])
+
+
+data_panel <- num_data %>%
+  mutate(
+    log_URBAN = log(URBAN + 1),
+    log_LABOUR = log(LABOUR + 1),
+    log_CARBON = log(CARBON + 1)
+  )
+vif(lm(REC ~ GDP + TRADE + ENERGY_INTENSITY + log_URBAN + log_LABOUR + log_CARBON, data = data_panel))
+pca_data <- prcomp(num_data[, c("URBAN", "LABOUR", "CARBON")], scale = TRUE)
+
+
+pca_data <- prcomp(
+  income_inequality[, c("URBAN", "LABOUR", "CARBON")],
+  scale. = TRUE
+)
+income_inequality$PC1_population <- pca_data$x[, 1]
+
+model_data <- income_inequality %>%
+  dplyr::select(-URBAN, -LABOUR) %>%      # remove the two variables
+  dplyr::select(where(is.numeric))        # keep only numeric columns
+
+model_2 <- vif(lm(REC ~ ., data = model_data))
+
+vif_df_2 <- data.frame(
+  Variable = names(model_2),
+  VIF = as.numeric(model_2)
+)
+
+#Since the updated VIF results still show severe multicollinearity—particularly for 
+#URBAN and LABOUR the output is not useful for a stable regression model. To improve model reliability, I will drop LABOUR and URBAN from the analysis, as they continue to inflate multicollinearity and do not contribute meaningful independent explanatory power.”
+
+
+# Log-transform selected variables
+model_data <- model_data %>%
+  mutate(
+    log_GDP   = log(GDP),
+    log_FDI   = log(FDI),
+    log_TRADE = log(TRADE),
+    log_CARBON = log(CARBON + 1),   # +1 only if zeros exist
+    log_ENERGY = log(ENERGY_INTENSITY)
+  )
+
+# Optional: drop original variables if you want
+model_data <- model_data %>%
+  select(-GDP, -FDI, -TRADE, -CARBON, -ENERGY_INTENSITY)
+
+# Re-run correlation matrix
+cor_matrix <- cor(model_data, use = "complete.obs")
+print(cor_matrix)
+
+# Re-run VIF
+library(car)
+vif_results <- vif(lm(GINI ~ ., data = model_data))
+print(vif_results)
+
+
 
 
 # -----------------------
@@ -467,16 +573,32 @@ cor_gt
 # Levin-Lin-Chu test
 library(plm)
 library(broom)
+
 purtest(data_panel$gdp_per_capita, test = "levinlin", exo = "intercept", lags = "AIC")
 
 results_df <- data_panel %>%
-  select(where(is.numeric)) %>%                 # keep only numeric vars
-  pivot_longer(everything(), names_to = "variable", values_to = "value") %>% 
-  group_by(variable) %>%                        # run test by variable
+  pivot_longer(
+    cols = where(is.numeric) & !c(country, year), 
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  group_by(variable) %>%
   summarise(
     test_result = list(
       tryCatch(
-        purtest(value, test = "levinlin", exo = "intercept", lags = "AIC"),
+        purtest(
+          plm::pdata.frame(
+            data.frame(
+              id = data_panel$country,
+              time = data_panel$year,
+              x = .data$value
+            ),
+            index = c("id", "time")
+          )$x,
+          test = "levinlin",
+          exo = "intercept",
+          lags = "AIC"
+        ),
         error = function(e) NULL
       )
     ),
@@ -485,8 +607,8 @@ results_df <- data_panel %>%
   mutate(
     tidy_result = map(test_result, ~ if(!is.null(.x)) broom::tidy(.x) else NULL)
   ) %>%
+  filter(!map_lgl(tidy_result, is.null)) %>%    # remove failed tests
   unnest(tidy_result)
-
 results_df
 
 # IPS, MW, and CIPS tests can be added similarly if needed
